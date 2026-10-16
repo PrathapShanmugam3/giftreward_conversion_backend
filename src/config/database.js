@@ -10,6 +10,21 @@ const env = require('./env');
 // See .claude/skills/gskloots-php-reference/references/database.md
 const RELAXED_SQL_MODE = 'NO_ENGINE_SUBSTITUTION';
 
+function readCaCert(caPath) {
+  try {
+    return fs.readFileSync(caPath, 'utf8');
+  } catch (err) {
+    // This file is required transitively by every route (app.js -> routes ->
+    // controllers -> models -> here), so a bad path crashes the whole
+    // serverless function on cold start with an opaque 500. On Vercel this
+    // usually means the .crt file wasn't included in the function bundle —
+    // see "functions.api/index.js.includeFiles" in vercel.json.
+    throw new Error(
+      `DB_SSL is enabled but the CA cert could not be read at "${caPath}": ${err.message}`
+    );
+  }
+}
+
 const sequelize = new Sequelize(env.db.name, env.db.user, env.db.pass, {
   host: env.db.host,
   port: env.db.port,
@@ -18,7 +33,7 @@ const sequelize = new Sequelize(env.db.name, env.db.user, env.db.pass, {
   dialectOptions: env.db.ssl
     ? {
         ssl: {
-          ca: fs.readFileSync(env.db.sslCaPath, 'utf8'),
+          ca: readCaCert(env.db.sslCaPath),
           minVersion: 'TLSv1.2',
           rejectUnauthorized: true,
         },
