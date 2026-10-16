@@ -44,8 +44,8 @@ async function getDashboard() {
       SELECT DATE_FORMAT(created_at, '%Y-%m') as month,
              SUM(payout) as revenue,
              COUNT(*) as conversions,
-             (SELECT COUNT(*) FROM clicks WHERE DATE_FORMAT(created_at, '%Y-%m') = month) as clicks,
-             (COUNT(*) / NULLIF((SELECT COUNT(*) FROM clicks WHERE DATE_FORMAT(created_at, '%Y-%m') = month), 0)) * 100 as cr
+             (SELECT COUNT(*) FROM clicks WHERE DATE_FORMAT(clicks.created_at, '%Y-%m') = DATE_FORMAT(conversions.created_at, '%Y-%m')) as clicks,
+             (COUNT(*) / NULLIF((SELECT COUNT(*) FROM clicks WHERE DATE_FORMAT(clicks.created_at, '%Y-%m') = DATE_FORMAT(conversions.created_at, '%Y-%m')), 0)) * 100 as cr
       FROM conversions
       WHERE status='approved'
       GROUP BY month
