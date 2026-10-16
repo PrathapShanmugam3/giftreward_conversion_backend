@@ -21,6 +21,10 @@ const dashboardAdminRoutes = require('./dashboardAdmin.routes');
 const conversionPublisherRoutes = require('./conversionPublisher.routes');
 const postbackPublisherRoutes = require('./postbackPublisher.routes');
 const profileRoutes = require('./profile.routes');
+const adminPostbackToolsRoutes = require('./adminPostbackTools.routes');
+const customEmailRoutes = require('./customEmail.routes');
+const publisherApiInfoRoutes = require('./publisherApiInfo.routes');
+const contactRoutes = require('./contact.routes');
 
 const router = express.Router();
 // /go, /postback, /tracking, /report are mounted directly on the app (not
@@ -54,5 +58,9 @@ router.use('/admin/dashboard', dashboardAdminRoutes);
 router.use('/publisher/conversions', conversionPublisherRoutes);
 router.use('/publisher/postback', postbackPublisherRoutes);
 router.use('/publisher/profile', profileRoutes);
+router.use('/admin/postback-tools', adminPostbackToolsRoutes);
+router.use('/admin/custom-email', customEmailRoutes);
+router.use('/publisher/api-info', publisherApiInfoRoutes);
+router.use('/contact', contactRoutes);
 
 module.exports = router;
