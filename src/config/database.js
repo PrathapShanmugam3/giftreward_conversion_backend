@@ -1,4 +1,13 @@
 const fs = require('fs');
+// Sequelize requires the mysql2 driver dynamically at runtime (inside
+// lib/dialects/abstract/connection-manager.js), not with a static
+// require() of its own. Bundlers that trace dependencies statically (like
+// Vercel's) can't see that dynamic require and silently leave mysql2 out of
+// the deployed function, even though it's a real package.json dependency
+// and `npm install` pulls it in fine at build time. A plain, literal
+// require() right here — in the same file that needs it — forces it into
+// every bundler's trace and into the deployed node_modules.
+require('mysql2');
 const { Sequelize } = require('sequelize');
 const env = require('./env');
 
