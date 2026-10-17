@@ -57,6 +57,7 @@ async function getLandingPageData({ offerId, userId, campaignId, referCode }) {
 
   return {
     offerName: offer.name,
+    offerImage: offer.image || '',
     steps,
     totalUserCashback: totalUserCashback(eventConfig),
     referrer,

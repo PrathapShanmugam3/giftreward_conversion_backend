@@ -8,4 +8,15 @@ const createPostbackRules = [
 
 const idParamRule = [param('id').isInt().withMessage('Invalid postback id')];
 
-module.exports = { createPostbackRules, idParamRule };
+const offerPostbackRules = [
+  param('id').isInt().withMessage('Invalid offer id'),
+  body('event').trim().notEmpty().withMessage('Event name is required'),
+  body('postbackUrl').trim().isURL({ require_protocol: true }).withMessage('A valid postback URL is required'),
+];
+
+const offerPostbackIdRules = [
+  param('id').isInt().withMessage('Invalid offer id'),
+  param('postbackId').isInt().withMessage('Invalid postback id'),
+];
+
+module.exports = { createPostbackRules, idParamRule, offerPostbackRules, offerPostbackIdRules };

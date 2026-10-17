@@ -4,7 +4,9 @@ const { Click, Conversion, Offer } = require('../models');
 const MAX_RESULTS = 500;
 
 // Mirrors tracking/index.php: public UPI lookup across clicks (p1 or p2)
-// LEFT JOIN conversions LEFT JOIN offers, newest first.
+// LEFT JOIN conversions LEFT JOIN offers, newest first. This is an
+// unauthenticated page, so only the columns the legacy page displayed are
+// returned — not the visitor's IP.
 async function lookupByUpi(query) {
   const search = (query || '').trim();
   if (!search) return [];
@@ -34,7 +36,6 @@ async function lookupByUpi(query) {
       clickId: click.clickId,
       p1: click.p1,
       p2: click.p2,
-      ip: click.ip,
       source: click.source,
       clickTime: click.createdAt,
       offerId: click.offerId,

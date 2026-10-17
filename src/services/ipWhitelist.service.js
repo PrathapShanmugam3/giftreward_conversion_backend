@@ -121,10 +121,11 @@ async function bulkAction({ action, ids }) {
     return { message: `${ids.length} entries deleted successfully` };
   }
 
-  const status = action === 'activate' ? 0 : action === 'deactivate' ? 1 : null;
-  // NOTE: "activate" in the legacy admin UI means "make this IP allowed",
-  // i.e. status=0 (not blocked); "deactivate" means status=1 (blocked).
-  // This preserves the confusing but load-bearing status semantic above.
+  const status = action === 'activate' ? 1 : action === 'deactivate' ? 0 : null;
+  // Same as sadmin/ip_whitelist.php: "activate" sets status=1 (an active
+  // entry, which BLOCKS postbacks from that IP) and "deactivate" sets
+  // status=0. This was previously inverted here, so the admin page's
+  // Block/Unblock bulk buttons did the opposite of their labels.
   if (status === null) throw ApiError.badRequest('Invalid bulk action');
 
   await IpPageWhitelist.update({ status }, { where: { id: { [Op.in]: ids } } });

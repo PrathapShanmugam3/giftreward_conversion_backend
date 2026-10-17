@@ -89,7 +89,55 @@ async function getDashboard(userId, period = '7days') {
 
   const activeOffers = await Offer.findAll({ where: { status: 'active' }, limit: 5, order: [['createdAt', 'DESC']] });
 
-  return { period, startDate, endDate, stats, lifetime, recentConversions, activeOffers };
+  const hourly = period === 'today' || period === 'yesterday';
+  const chart = await getChartSeries(userId, startDate, endDate, hourly);
+
+  return { period, startDate, endDate, stats, lifetime, recentConversions, activeOffers, chart };
+}
+
+// publisher/index.php's chart: 24 hourly buckets for today/yesterday,
+// otherwise one bucket per day in the range — clicks, approved conversions
+// and earnings. The legacy page ran one query per bucket; this groups in
+// SQL and zero-fills the gaps.
+async function getChartSeries(userId, startDate, endDate, hourly) {
+  const bucketExpr = hourly ? 'HOUR(created_at)' : "DATE_FORMAT(created_at, '%Y-%m-%d')";
+  const range = 'user_id = ? AND DATE(created_at) >= ? AND DATE(created_at) <= ?';
+  const replacements = [userId, startDate, endDate];
+
+  const [clickRows, convRows] = await Promise.all([
+    sequelize.query(`SELECT ${bucketExpr} as bucket, COUNT(*) as count FROM clicks WHERE ${range} GROUP BY bucket`, {
+      replacements,
+      type: QueryTypes.SELECT,
+    }),
+    sequelize.query(
+      `SELECT ${bucketExpr} as bucket, COUNT(*) as count, SUM(payout) as total FROM conversions WHERE ${range} AND status='approved' GROUP BY bucket`,
+      { replacements, type: QueryTypes.SELECT }
+    ),
+  ]);
+
+  const keyOf = (bucket) => String(hourly ? Number(bucket) : bucket);
+  const clicksBy = new Map(clickRows.map((r) => [keyOf(r.bucket), Number(r.count)]));
+  const convBy = new Map(convRows.map((r) => [keyOf(r.bucket), { count: Number(r.count), total: Number(r.total) || 0 }]));
+
+  const keys = [];
+  if (hourly) {
+    for (let h = 0; h < 24; h += 1) keys.push({ key: String(h), label: `${String(h).padStart(2, '0')}:00` });
+  } else {
+    const d = new Date(`${startDate}T00:00:00Z`);
+    const end = new Date(`${endDate}T00:00:00Z`);
+    while (d <= end) {
+      const key = d.toISOString().slice(0, 10);
+      keys.push({ key, label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) });
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
+  }
+
+  return keys.map(({ key, label }) => ({
+    label,
+    clicks: clicksBy.get(key) || 0,
+    conversions: convBy.get(key)?.count || 0,
+    earnings: convBy.get(key)?.total || 0,
+  }));
 }
 
 module.exports = { getDashboard };

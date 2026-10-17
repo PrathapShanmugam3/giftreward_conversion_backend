@@ -22,6 +22,11 @@ const updateOffer = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Offer updated successfully', offer });
 });
 
+const setOfferStatus = asyncHandler(async (req, res) => {
+  const offer = await offerService.setOfferStatus(req.params.id, req.body.status);
+  res.json({ success: true, message: `Offer marked ${offer.status}`, offer });
+});
+
 const deleteOffer = asyncHandler(async (req, res) => {
   const result = await offerService.deleteOffer(req.params.id);
   res.json({ success: true, ...result });
@@ -47,6 +52,7 @@ const bulkModerateRequests = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  setOfferStatus,
   listOffers,
   getOffer,
   createOffer,

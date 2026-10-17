@@ -4,8 +4,8 @@ const { sendMail } = require('./mail.service');
 
 // Mirrors sadmin/custom_email_sender.php: send a custom HTML message to
 // all/selected/single active publishers, with {name}/{company_name}/{year}
-// template substitution. File attachments were deferred along with the
-// rest of file-upload support — see CUTOVER.md.
+// template substitution. Optional attachments (in-memory buffers from the
+// multipart request) go out with every recipient's copy.
 async function getRecipients({ recipientType, publisherIds, singlePublisherId }) {
   if (recipientType === 'all') {
     return User.findAll({ where: { status: 1 }, attributes: ['id', 'name', 'email'] });
@@ -31,7 +31,7 @@ function personalize(message, user, siteName) {
     .replaceAll('{year}', String(new Date().getFullYear()));
 }
 
-async function sendCustomEmail({ recipientType, publisherIds, singlePublisherId, subject, message }) {
+async function sendCustomEmail({ recipientType, publisherIds, singlePublisherId, subject, message, attachments = [] }) {
   const recipients = await getRecipients({ recipientType, publisherIds, singlePublisherId });
   const config = await SiteConfig.findByPk(1);
   const siteName = config?.siteName || 'GiftReward';
@@ -41,7 +41,7 @@ async function sendCustomEmail({ recipientType, publisherIds, singlePublisherId,
 
   for (const user of recipients) {
     try {
-      await sendMail({ to: user.email, subject, html: personalize(message, user, siteName) });
+      await sendMail({ to: user.email, subject, html: personalize(message, user, siteName), attachments });
       successCount += 1;
     } catch (err) {
       errors.push(`${user.email}: ${err.message}`);

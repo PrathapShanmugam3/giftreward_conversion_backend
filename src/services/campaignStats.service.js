@@ -1,5 +1,5 @@
 const { Op, fn, col } = require('sequelize');
-const { sequelize, Campaign, CampaignClick, ReferUser } = require('../models');
+const { Campaign, CampaignClick, ReferUser, Offer } = require('../models');
 const ApiError = require('../utils/ApiError');
 
 // Mirrors publisher/campaign-stats.php. NOTE (quirks.md): campaign_clicks
@@ -9,7 +9,10 @@ const ApiError = require('../utils/ApiError');
 // Reproduced as-is for behavioural parity; not silently "fixed" to join on
 // offerId+userId instead.
 async function getCampaignStats(userId, campaignRowId) {
-  const campaign = await Campaign.findOne({ where: { id: campaignRowId, userId } });
+  const campaign = await Campaign.findOne({
+    where: { id: campaignRowId, userId },
+    include: [{ model: Offer, attributes: ['id', 'name', 'image'] }],
+  });
   if (!campaign) throw ApiError.notFound('Campaign not found or you do not have permission to view it');
 
   const where = {

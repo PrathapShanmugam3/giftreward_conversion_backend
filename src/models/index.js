@@ -20,6 +20,7 @@ const IpPageWhitelist = require('./IpPageWhitelist');
 const PaymentGateway = require('./PaymentGateway');
 const GatewayConfig = require('./GatewayConfig');
 const GatewayParameter = require('./GatewayParameter');
+const SiteAsset = require('./SiteAsset');
 
 // ---- Associations (mirrors the FKs in database.md) ----
 
@@ -103,4 +104,5 @@ module.exports = {
   PaymentGateway,
   GatewayConfig,
   GatewayParameter,
+  SiteAsset,
 };

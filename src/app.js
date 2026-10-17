@@ -7,12 +7,11 @@ const cookieParser = require('cookie-parser');
 const env = require('./config/env');
 const apiRoutes = require('./routes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
-const { apiLimiter, trackingLimiter, postbackLimiter, publicLookupLimiter } = require('./middleware/rateLimiters');
+const { apiLimiter, trackingLimiter, postbackLimiter } = require('./middleware/rateLimiters');
 const goRoutes = require('./routes/go.routes');
 const postbackRoutes = require('./routes/postback.routes');
 const postbackShortRoutes = require('./routes/postbackShort.routes');
 const reportingApiRoutes = require('./routes/reportingApi.routes');
-const trackingLookupRoutes = require('./routes/trackingLookup.routes');
 
 const app = express();
 
@@ -64,11 +63,10 @@ app.use(
 app.use(postbackShortRoutes); // short form: /postback/:tid/:event/:key
 app.use('/postback', postbackLimiter, postbackRoutes); // long form: /postback?click_id=&event=&key=
 app.use('/report', trackingLimiter, reportingApiRoutes); // was api.php
-app.use('/tracking', publicLookupLimiter, trackingLookupRoutes);
-// /o and /refer are also React page routes served by the frontend (the
-// pages at those paths call back into this API). To avoid the page route
-// and the API route colliding on the same path, the API side lives under
-// /api/o and /api/refer — see routes/index.js.
+// /o, /refer and /tracking are also React page routes served by the
+// frontend (the pages at those paths call back into this API). To avoid the
+// page route and the API route colliding on the same path, the API side
+// lives under /api/o, /api/refer and /api/tracking — see routes/index.js.
 
 app.use('/api', apiLimiter, apiRoutes);
 

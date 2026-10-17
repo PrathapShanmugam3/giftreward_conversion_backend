@@ -8,7 +8,13 @@ async function listConversionsAdmin({ status, offerId, userId, fromDate, toDate 
   if (status) where.status = status;
   if (offerId) where.offerId = offerId;
   if (userId) where.userId = userId;
-  if (fromDate && toDate) where.createdAt = { [Op.between]: [new Date(fromDate), new Date(toDate)] };
+  // Each bound applies on its own, and the "to" day is inclusive (a bare
+  // `new Date(toDate)` is midnight, which used to drop that whole day).
+  if (fromDate || toDate) {
+    where.createdAt = {};
+    if (fromDate) where.createdAt[Op.gte] = new Date(`${fromDate}T00:00:00`);
+    if (toDate) where.createdAt[Op.lte] = new Date(`${toDate}T23:59:59.999`);
+  }
 
   return Conversion.findAll({
     where,

@@ -25,14 +25,17 @@ const adminPostbackToolsRoutes = require('./adminPostbackTools.routes');
 const customEmailRoutes = require('./customEmail.routes');
 const publisherApiInfoRoutes = require('./publisherApiInfo.routes');
 const contactRoutes = require('./contact.routes');
+const trackingLookupRoutes = require('./trackingLookup.routes');
+const publicRoutes = require('./public.routes');
+const { publicLookupLimiter } = require('../middleware/rateLimiters');
 
 const router = express.Router();
-// /go, /postback, /tracking, /report are mounted directly on the app (not
-// under /api) in app.js since nothing else lives at those paths.
-// /o and /refer are ALSO React page routes (frontend serves the page at
-// that path; the page then calls this API). Mounting them here under
-// /api/o and /api/refer keeps the page route and the API route from
-// colliding on the same path — see app.js for the longer note.
+// /go, /postback, /report are mounted directly on the app (not under /api)
+// in app.js since nothing else lives at those paths.
+// /o, /refer and /tracking are ALSO React page routes (frontend serves the
+// page at that path; the page then calls this API). Mounting them here
+// under /api/o, /api/refer and /api/tracking keeps the page route and the
+// API route from colliding on the same path — see app.js for the longer note.
 router.use('/health', healthRoutes);
 router.use('/auth', authRoutes);
 router.use('/admin/offers', offerAdminRoutes);
@@ -62,5 +65,7 @@ router.use('/admin/postback-tools', adminPostbackToolsRoutes);
 router.use('/admin/custom-email', customEmailRoutes);
 router.use('/publisher/api-info', publisherApiInfoRoutes);
 router.use('/contact', contactRoutes);
+router.use('/tracking', publicLookupLimiter, trackingLookupRoutes);
+router.use('/public', publicRoutes);
 
 module.exports = router;

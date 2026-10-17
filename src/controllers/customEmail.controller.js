@@ -23,6 +23,7 @@ const send = asyncHandler(async (req, res) => {
     singlePublisherId,
     subject,
     message,
+    attachments: (req.files || []).map((f) => ({ filename: f.originalname, content: f.buffer, contentType: f.mimetype })),
   });
   res.json({ success: true, ...result });
 });

@@ -20,14 +20,18 @@ function getTransporter() {
   return transporter;
 }
 
-async function sendMail({ to, subject, html }) {
+async function sendMail({ to, subject, html, attachments }) {
   const t = getTransporter();
   if (!t) {
-    logger.warn('SMTP not configured — logging email instead of sending', { to, subject });
+    logger.warn('SMTP not configured — logging email instead of sending', {
+      to,
+      subject,
+      attachments: attachments?.map((a) => a.filename),
+    });
     logger.debug('Email body', html);
     return { simulated: true };
   }
-  return t.sendMail({ from: env.smtp.from, to, subject, html });
+  return t.sendMail({ from: env.smtp.from, to, subject, html, attachments });
 }
 
 module.exports = { sendMail };

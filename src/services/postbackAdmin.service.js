@@ -27,7 +27,7 @@ async function listPostbacksAdmin({ status, offerId, userId, search }) {
         { email: { [Op.like]: `%${search}%` } },
       ],
     };
-    include[0].required = false;
+    include[0].required = true; // inner join, or the search filters nothing
   }
 
   const postbacks = await Postback.findAll({

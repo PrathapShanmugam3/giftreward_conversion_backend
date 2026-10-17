@@ -192,6 +192,14 @@ async function updateOffer(id, payload) {
   });
 }
 
+// sadmin/offers.php ?status= quick toggle — status only, events untouched.
+async function setOfferStatus(id, status) {
+  const offer = await Offer.findByPk(id);
+  if (!offer) throw ApiError.notFound('Offer not found');
+  await offer.update({ status });
+  return { id: offer.id, status: offer.status };
+}
+
 async function deleteOffer(id) {
   return sequelize.transaction(async (t) => {
     const offer = await Offer.findByPk(id, { transaction: t });
@@ -373,6 +381,7 @@ async function requestOfferAccess(offerId, userId) {
 
 module.exports = {
   canAccessOffer,
+  setOfferStatus,
   listOffersAdmin,
   getOfferAdmin,
   createOffer,

@@ -30,12 +30,22 @@ async function getWalletOverview(userId) {
   const user = await User.findByPk(userId, { attributes: ['walletBalance', 'withdrawalStatus'] });
   if (!user) throw ApiError.notFound('User not found');
 
-  const [transactions, withdrawals] = await Promise.all([
+  const [transactions, withdrawals, site] = await Promise.all([
     WalletTransaction.findAll({ where: { userId }, order: [['createdAt', 'DESC']], limit: 10 }),
     WithdrawalRequest.findAll({ where: { userId }, order: [['createdAt', 'DESC']] }),
+    SiteConfig.findByPk(1, { attributes: ['minimumWithdrawal', 'wstatus'] }),
   ]);
 
-  return { walletBalance: user.walletBalance, withdrawalStatus: user.withdrawalStatus, transactions, withdrawals };
+  return {
+    walletBalance: user.walletBalance,
+    withdrawalStatus: user.withdrawalStatus,
+    // Same rules requestWithdrawal enforces, exposed so the page can explain
+    // them up front instead of only after a rejected submit.
+    minimumWithdrawal: Number(site?.minimumWithdrawal || 0),
+    withdrawalsEnabled: site?.wstatus !== '0',
+    transactions,
+    withdrawals,
+  };
 }
 
 // Mirrors publisher/wallet.php POST request_withdrawal, but transactional

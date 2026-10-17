@@ -7,6 +7,7 @@ const {
   idParamRule,
   moderateRequestRules,
   bulkModerateRules,
+  setStatusRules,
 } = require('../validators/offer.validators');
 const { requireAdmin } = require('../middleware/auth');
 
@@ -23,6 +24,7 @@ router.get('/', controller.listOffers);
 router.post('/', createOfferRules, validate, controller.createOffer);
 router.get('/:id', idParamRule, validate, controller.getOffer);
 router.put('/:id', updateOfferRules, validate, controller.updateOffer);
+router.patch('/:id/status', setStatusRules, validate, controller.setOfferStatus);
 router.delete('/:id', idParamRule, validate, controller.deleteOffer);
 
 module.exports = router;

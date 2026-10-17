@@ -36,7 +36,13 @@ const bulkModerateRules = [
 
 const requestOfferRules = [param('id').isInt().withMessage('Invalid offer id')];
 
+const setStatusRules = [
+  param('id').isInt().withMessage('Invalid offer id'),
+  body('status').isIn(OFFER_STATUSES).withMessage('Invalid status'),
+];
+
 module.exports = {
+  setStatusRules,
   createOfferRules,
   updateOfferRules,
   idParamRule,

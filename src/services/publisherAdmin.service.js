@@ -31,6 +31,8 @@ function publisherSummary(user) {
     status: user.status,
     walletBalance: user.walletBalance,
     withdrawalStatus: user.withdrawalStatus,
+    postbackUrl: user.postbackUrl,
+    tgChatId: user.tgChatId,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -72,7 +74,7 @@ async function getPublisher(id) {
 // ---------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------
-async function createPublisher({ name, email, password, companyName, contactNumber }) {
+async function createPublisher({ name, email, password, companyName, contactNumber, postbackUrl, tgChatId, withdrawalStatus }) {
   const cleanEmail = sanitize(email).toLowerCase();
   const existing = await User.findOne({ where: { email: cleanEmail } });
   if (existing) throw ApiError.conflict('Email already registered.');
@@ -92,6 +94,10 @@ async function createPublisher({ name, email, password, companyName, contactNumb
     // an admin-created account is trusted, skips email verification.
     status: 1,
     walletBalance: 0,
+    // Extra fields on sadmin/publishers.php's create form.
+    postbackUrl: postbackUrl ? sanitize(postbackUrl) : null,
+    tgChatId: tgChatId ? sanitize(tgChatId) : '',
+    withdrawalStatus: withdrawalStatus === undefined ? 1 : Number(!!Number(withdrawalStatus)),
     // auth_token/tg_chat_id are NOT NULL with no default (quirks.md MySQL 8
     // strict-mode warning) — legacy inserts omit auth_token and fail under
     // strict mode; we always supply one so this works without relaxing
@@ -176,6 +182,33 @@ async function updatePublisher(id, payload) {
     if (clean !== user.status) {
       changes.push(`Status: "${user.status ? 'Active' : 'Locked'}" -> "${clean ? 'Active' : 'Locked'}"`);
       updates.status = clean;
+    }
+  }
+
+  // Remaining fields on the legacy edit form: per-publisher postback URL,
+  // Telegram chat id, and the withdrawal on/off switch that wallet.service
+  // enforces.
+  if (payload.postbackUrl !== undefined) {
+    const clean = payload.postbackUrl ? sanitize(payload.postbackUrl) : null;
+    if (clean !== (user.postbackUrl || null)) {
+      changes.push('Postback URL updated');
+      updates.postbackUrl = clean;
+    }
+  }
+
+  if (payload.tgChatId !== undefined) {
+    const clean = sanitize(payload.tgChatId || '');
+    if (clean !== user.tgChatId) {
+      changes.push('Telegram chat ID updated');
+      updates.tgChatId = clean;
+    }
+  }
+
+  if (payload.withdrawalStatus !== undefined) {
+    const clean = Number(!!Number(payload.withdrawalStatus));
+    if (clean !== user.withdrawalStatus) {
+      changes.push(`Withdrawals: "${user.withdrawalStatus ? 'Enabled' : 'Disabled'}" -> "${clean ? 'Enabled' : 'Disabled'}"`);
+      updates.withdrawalStatus = clean;
     }
   }
 
