@@ -28,11 +28,22 @@ function buildEventConfig(events) {
 }
 
 async function listCampaigns(userId) {
-  return Campaign.findAll({
+  const campaigns = await Campaign.findAll({
     where: { userId },
     include: [{ model: Offer, attributes: ['id', 'name'] }],
     order: [['createdAt', 'DESC']],
   });
+  return campaigns.map(withPublicLinks);
+}
+
+// Link URLs are derived from configuration when returned, so campaigns created
+// before the production URLs were configured do not keep showing localhost.
+function withPublicLinks(campaign) {
+  const row = campaign.toJSON();
+  const base = env.frontendUrl.replace(/\/$/, '');
+  row.campaignLink = `${base}/o?o=${row.offerId}&pid=${row.userId}&cid=${row.campaignId}`;
+  row.referralLink = `${base}/refer?o=${row.offerId}&pid=${row.userId}&cid=${row.campaignId}`;
+  return row;
 }
 
 async function getCampaign(userId, campaignRowId) {
@@ -41,7 +52,7 @@ async function getCampaign(userId, campaignRowId) {
     include: [{ model: Offer, attributes: ['id', 'name'] }],
   });
   if (!campaign) throw ApiError.notFound('Campaign not found or you do not have permission to view it');
-  return campaign;
+  return withPublicLinks(campaign);
 }
 
 async function createCampaign(userId, { offerId, events, steps, referralEnabled }) {
