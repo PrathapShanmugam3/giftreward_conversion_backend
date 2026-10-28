@@ -24,16 +24,20 @@ async function getLandingPageData({ offerId, userId, campaignId, referCode }) {
   const campaign = await Campaign.findOne({ where: { campaignId } });
   if (!campaign) throw ApiError.badRequest('Invalid campaign ID');
 
-  const offer = await Offer.findByPk(offerId);
-  if (!offer) {
+  if (String(campaign.offerId) !== String(offerId) || String(campaign.userId) !== String(userId)) {
+    throw ApiError.badRequest('Campaign link does not match this offer or publisher');
+  }
+
+  const offer = await Offer.findByPk(campaign.offerId);
+  if (!offer || offer.status !== 'active' || campaign.status !== 'active') {
     return {
       offerName: 'Offer unavailable',
       offerImage: '',
       steps: [],
       totalUserCashback: 0,
       referrer: null,
-      errorMessage: 'This offer is no longer available or was removed from the active catalog.',
-      offerMissing: true,
+      errorMessage: 'This offer or campaign is no longer available.',
+      offerUnavailable: true,
     };
   }
 
@@ -79,10 +83,21 @@ async function getLandingPageData({ offerId, userId, campaignId, referCode }) {
 // campaign_clicks, then hands back the /go redirect target. The actual
 // redirect to /go is performed by the controller.
 async function submitLandingForm({ offerId, userId, campaignId, referCode, name, mobile, upiId, ip }) {
-  const offer = await Offer.findByPk(offerId);
-  if (!offer) throw ApiError.badRequest('This offer is no longer available or was removed from the active catalog.');
+  if (!offerId || !userId || !campaignId) {
+    throw ApiError.badRequest('Invalid request parameters');
+  }
+
   const campaign = await Campaign.findOne({ where: { campaignId } });
   if (!campaign) throw ApiError.badRequest('Invalid campaign ID');
+  if (String(campaign.offerId) !== String(offerId) || String(campaign.userId) !== String(userId)) {
+    throw ApiError.badRequest('Campaign link does not match this offer or publisher');
+  }
+  if (campaign.status !== 'active') throw ApiError.badRequest('This campaign is no longer active');
+
+  const offer = await Offer.findByPk(campaign.offerId);
+  if (!offer || offer.status !== 'active') {
+    throw ApiError.badRequest('This offer is no longer available');
+  }
 
   const cleanName = sanitize(name || '');
   const cleanMobile = sanitize(mobile || '');
