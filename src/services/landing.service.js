@@ -21,11 +21,21 @@ async function getLandingPageData({ offerId, userId, campaignId, referCode }) {
     throw ApiError.badRequest('Invalid request parameters');
   }
 
-  const offer = await Offer.findByPk(offerId);
-  if (!offer) throw ApiError.badRequest('Invalid offer ID');
-
   const campaign = await Campaign.findOne({ where: { campaignId } });
   if (!campaign) throw ApiError.badRequest('Invalid campaign ID');
+
+  const offer = await Offer.findByPk(offerId);
+  if (!offer) {
+    return {
+      offerName: 'Offer unavailable',
+      offerImage: '',
+      steps: [],
+      totalUserCashback: 0,
+      referrer: null,
+      errorMessage: 'This offer is no longer available or was removed from the active catalog.',
+      offerMissing: true,
+    };
+  }
 
   let steps = [];
   try {
@@ -70,7 +80,7 @@ async function getLandingPageData({ offerId, userId, campaignId, referCode }) {
 // redirect to /go is performed by the controller.
 async function submitLandingForm({ offerId, userId, campaignId, referCode, name, mobile, upiId, ip }) {
   const offer = await Offer.findByPk(offerId);
-  if (!offer) throw ApiError.badRequest('Invalid offer ID');
+  if (!offer) throw ApiError.badRequest('This offer is no longer available or was removed from the active catalog.');
   const campaign = await Campaign.findOne({ where: { campaignId } });
   if (!campaign) throw ApiError.badRequest('Invalid campaign ID');
 
