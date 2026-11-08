@@ -125,11 +125,18 @@ async function sendGatewayPayout(withdrawal, gatewayId, transaction) {
     include: [{ model: GatewayConfig }, { model: GatewayParameter }],
     transaction,
   });
-  if (!gateway || !gateway.GatewayConfig?.apiEndpoint) {
-    throw ApiError.badRequest('Choose an active API gateway with an endpoint, or leave gateway blank for a manual payout');
+  if (!gateway) {
+    throw ApiError.badRequest('Choose an active API gateway, or leave gateway blank for a manual payout');
   }
 
   const config = gateway.GatewayConfig;
+  if (gateway.name.trim().toLowerCase() === 'rupiyax') {
+    const user = await User.findByPk(withdrawal.userId, { attributes: ['name'], transaction });
+    return sendRupiyaXPayout(withdrawal, config?.apiKey, user?.name);
+  }
+  if (!config?.apiEndpoint) {
+    throw ApiError.badRequest('This API gateway needs an endpoint, or leave gateway blank for a manual payout');
+  }
   const payload = {};
   for (const parameter of gateway.GatewayParameters || []) {
     payload[parameter.paramKey] = parameter.paramValue;
@@ -166,6 +173,68 @@ async function sendGatewayPayout(withdrawal, gatewayId, transaction) {
   return response.data;
 }
 
+// RupiRewards uses this provider's dedicated payout contract. Keep this
+// adapter aligned with backend/services/rupiyaXService.js in that project.
+async function sendRupiyaXPayout(withdrawal, apiKey, userName) {
+  if (!apiKey?.trim()) throw ApiError.badRequest('Add the RupiyaX API key to this gateway first');
+  const payoutMethod = String(withdrawal.method).toLowerCase();
+  if (!['upi', 'bank'].includes(payoutMethod)) {
+    throw ApiError.badRequest('RupiyaX payouts support UPI and bank transfer only');
+  }
+  const fields = {};
+  const details = String(withdrawal.details || '').trim();
+  if (details.includes(':')) {
+    details.split(/[|\n]/).forEach((part) => {
+      const i = part.indexOf(':');
+      if (i < 0) return;
+      const key = part.slice(0, i).trim().toLowerCase();
+      const value = part.slice(i + 1).trim();
+      if (!value) return;
+      if (key.startsWith('name') || key.includes('holder')) fields.name = value;
+      else if (key.startsWith('a/c') || key.includes('account')) fields.accountNumber = value;
+      else if (key.includes('ifsc')) fields.ifsc = value;
+      else if (key.includes('upi')) fields.upi = value;
+    });
+  }
+
+  const isUpi = payoutMethod === 'upi';
+  const upi = isUpi ? (fields.upi || details) : '';
+  const accountNumber = isUpi ? '' : (fields.accountNumber || '');
+  const ifsc = isUpi ? '' : (fields.ifsc || '');
+  if ((isUpi && !upi) || (!isUpi && (!accountNumber || !ifsc))) {
+    throw ApiError.badRequest(isUpi
+      ? 'Enter a valid UPI ID for RupiyaX payouts'
+      : 'For RupiyaX bank payouts, enter details as Account Number: … | IFSC: … | Account Holder: …');
+  }
+
+  let result;
+  try {
+    const response = await axios.post('https://api.rupiyax.com/api/v1/payouts/request', {
+      amount: Number(withdrawal.amount),
+      ref_id: `WD${withdrawal.id}`,
+      comment: '',
+      method: isUpi ? 'upi' : 'imps',
+      name: fields.name || userName || 'Unknown',
+      upi,
+      acc_no: accountNumber,
+      ifsc,
+    }, {
+      headers: { 'x-api-key': apiKey.trim(), 'Content-Type': 'application/json' },
+      timeout: 20000,
+    });
+    result = response.data;
+  } catch (err) {
+    if (err.response?.data?.message) {
+      throw new ApiError(502, `RupiyaX payout failed: ${err.response.data.message}`);
+    }
+    throw new ApiError(502, `RupiyaX payout request failed${err.code === 'ECONNABORTED' ? ' (timed out)' : ''}; check RupiyaX before retrying.`);
+  }
+  if (!result?.success) {
+    throw new ApiError(502, `RupiyaX rejected the payout: ${result?.message || 'unknown provider error'}`);
+  }
+  return result;
+}
+
 async function updateWithdrawalStatus(withdrawalId, { status, notes, gatewayId }) {
   if (!['pending', 'approved', 'rejected'].includes(status)) {
     throw ApiError.badRequest('Invalid status value');
@@ -195,7 +264,8 @@ async function updateWithdrawalStatus(withdrawalId, { status, notes, gatewayId }
     }
 
     withdrawal.status = status;
-    const providerReference = gatewayResponse?.transferId || gatewayResponse?.referenceId || gatewayResponse?.id;
+    const providerReference = gatewayResponse?.transferId || gatewayResponse?.referenceId || gatewayResponse?.id
+      || gatewayResponse?.data?.trxId || gatewayResponse?.data?.trx_id || gatewayResponse?.data?.refId || gatewayResponse?.data?.ref_id;
     withdrawal.notes = [notes, providerReference ? `Gateway reference: ${providerReference}` : null].filter(Boolean).join('\n') || null;
     withdrawal.processedAt = new Date();
     await withdrawal.save({ transaction: t });
