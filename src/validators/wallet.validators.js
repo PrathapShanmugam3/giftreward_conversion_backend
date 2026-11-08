@@ -12,6 +12,7 @@ const updateWithdrawalStatusRules = [
   param('id').isInt().withMessage('Invalid withdrawal id'),
   body('status').isIn(['approved', 'rejected']).withMessage('Invalid status value'),
   body('notes').optional().isString(),
+  body('gatewayId').optional().isInt({ gt: 0 }).withMessage('Invalid payment gateway'),
 ];
 
 const updateConversionStatusRules = [

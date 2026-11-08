@@ -1,4 +1,5 @@
-const { sequelize, User, WalletTransaction, WithdrawalRequest, SiteConfig } = require('../models');
+const axios = require('axios');
+const { sequelize, User, WalletTransaction, WithdrawalRequest, SiteConfig, PaymentGateway, GatewayConfig, GatewayParameter } = require('../models');
 const ApiError = require('../utils/ApiError');
 
 const VALID_METHODS = ['upi', 'bank', 'paypal'];
@@ -117,7 +118,55 @@ async function listWithdrawalsAdmin({ status } = {}) {
 // balance on reject (legacy never did) and is transactional/idempotent
 // (re-processing an already-resolved request is a no-op, not a second
 // debit/credit).
-async function updateWithdrawalStatus(withdrawalId, { status, notes }) {
+async function sendGatewayPayout(withdrawal, gatewayId, transaction) {
+  if (!gatewayId) return null; // Manual payout: admin has paid outside the system.
+  const gateway = await PaymentGateway.findOne({
+    where: { id: gatewayId, type: 'api', status: 'active' },
+    include: [{ model: GatewayConfig }, { model: GatewayParameter }],
+    transaction,
+  });
+  if (!gateway || !gateway.GatewayConfig?.apiEndpoint) {
+    throw ApiError.badRequest('Choose an active API gateway with an endpoint, or leave gateway blank for a manual payout');
+  }
+
+  const config = gateway.GatewayConfig;
+  const payload = {};
+  for (const parameter of gateway.GatewayParameters || []) {
+    payload[parameter.paramKey] = parameter.paramValue;
+  }
+  Object.assign(payload, {
+    withdrawalId: withdrawal.id,
+    amount: Number(withdrawal.amount),
+    currency: 'INR',
+    method: withdrawal.method,
+    beneficiary: withdrawal.details,
+    idempotencyKey: `withdrawal-${withdrawal.id}`,
+  });
+  const headers = { Accept: 'application/json', 'Idempotency-Key': payload.idempotencyKey };
+  if (config.apiKey) headers['X-API-Key'] = config.apiKey;
+  if (config.apiSecret) headers['X-API-Secret'] = config.apiSecret;
+
+  let response;
+  try {
+    response = await axios({
+      url: config.apiEndpoint,
+      method: config.apiMethod || 'POST',
+      headers,
+      timeout: 20000,
+      ...(config.apiMethod === 'GET' ? { params: payload } : { data: payload }),
+      validateStatus: () => true,
+    });
+  } catch (err) {
+    throw new ApiError(502, `Payout gateway request failed: ${err.code === 'ECONNABORTED' ? 'request timed out' : 'could not connect'}. Check the gateway before retrying.`);
+  }
+  const successCodes = String(config.successCodes || '200,201').split(',').map((code) => Number(code.trim()));
+  if (!successCodes.includes(response.status)) {
+    throw new ApiError(502, `Payout gateway returned HTTP ${response.status}; withdrawal remains pending`);
+  }
+  return response.data;
+}
+
+async function updateWithdrawalStatus(withdrawalId, { status, notes, gatewayId }) {
   if (!['pending', 'approved', 'rejected'].includes(status)) {
     throw ApiError.badRequest('Invalid status value');
   }
@@ -130,6 +179,13 @@ async function updateWithdrawalStatus(withdrawalId, { status, notes }) {
       throw ApiError.conflict(`This request was already ${withdrawal.status} and cannot be changed`);
     }
 
+    // Keep the row lock while contacting the provider so concurrent admin
+    // clicks cannot submit the same withdrawal twice. Provider receives a
+    // stable idempotency key for safe retries after ambiguous network errors.
+    const gatewayResponse = status === 'approved'
+      ? await sendGatewayPayout(withdrawal, gatewayId, t)
+      : null;
+
     if (status === 'rejected') {
       await User.increment('walletBalance', { by: Number(withdrawal.amount), where: { id: withdrawal.userId }, transaction: t });
       await WalletTransaction.create(
@@ -139,7 +195,8 @@ async function updateWithdrawalStatus(withdrawalId, { status, notes }) {
     }
 
     withdrawal.status = status;
-    withdrawal.notes = notes || null;
+    const providerReference = gatewayResponse?.transferId || gatewayResponse?.referenceId || gatewayResponse?.id;
+    withdrawal.notes = [notes, providerReference ? `Gateway reference: ${providerReference}` : null].filter(Boolean).join('\n') || null;
     withdrawal.processedAt = new Date();
     await withdrawal.save({ transaction: t });
 
