@@ -2,7 +2,8 @@ const path = require('path');
 
 require('dotenv').config();
 
-const DEFAULT_SSL_CA_PATH = path.join(__dirname, 'certs', 'ca-certificates.crt');
+const BACKEND_ROOT = path.resolve(__dirname, '../..');
+const DEFAULT_SSL_CA_PATH = path.join(BACKEND_ROOT, 'ca.pem');
 
 function required(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -30,7 +31,9 @@ module.exports = {
     pass: required('DB_PASS', ''),
     logging: process.env.DB_LOGGING === 'true',
     ssl: process.env.DB_SSL === 'true',
-    sslCaPath: process.env.DB_SSL_CA || DEFAULT_SSL_CA_PATH,
+    sslCaPath: process.env.DB_SSL_CA
+      ? path.resolve(BACKEND_ROOT, process.env.DB_SSL_CA)
+      : DEFAULT_SSL_CA_PATH,
   },
 
   jwt: {

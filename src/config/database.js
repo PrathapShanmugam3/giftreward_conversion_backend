@@ -26,8 +26,8 @@ function readCaCert(caPath) {
     // This file is required transitively by every route (app.js -> routes ->
     // controllers -> models -> here), so a bad path crashes the whole
     // serverless function on cold start with an opaque 500. On Vercel this
-    // usually means the .crt file wasn't included in the function bundle —
-    // see "functions.api/index.js.includeFiles" in vercel.json.
+    // usually means ca.pem wasn't included in the function bundle; see
+    // functions.api/index.js.includeFiles in vercel.json.
     throw new Error(
       `DB_SSL is enabled but the CA cert could not be read at "${caPath}": ${err.message}`
     );
