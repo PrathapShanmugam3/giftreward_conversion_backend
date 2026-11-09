@@ -25,7 +25,7 @@ module.exports = {
   db: {
     host: required('DB_HOST', 'localhost'),
     port: Number(process.env.DB_PORT || 3306),
-    name: required('DB_NAME', 'giftreward'),
+    name: required('DB_NAME', 'giftrewards'),
     user: required('DB_USER', 'root'),
     pass: required('DB_PASS', ''),
     logging: process.env.DB_LOGGING === 'true',

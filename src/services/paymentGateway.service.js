@@ -2,8 +2,8 @@ const { sequelize, PaymentGateway, GatewayConfig, GatewayParameter } = require('
 const ApiError = require('../utils/ApiError');
 
 // Mirrors sadmin/gateway_management.php (add_gateway / update_gateway /
-// delete_gateway actions). payment_gateways is admin CRUD only — not
-// referenced anywhere in the actual payout flow (database.md).
+// delete_gateway actions); RupiyaX payout configuration is consumed by the
+// withdrawal approval flow.
 
 async function listGateways() {
   return PaymentGateway.findAll({
@@ -89,15 +89,17 @@ async function updateGateway(id, payload) {
     const effectiveType = type ?? gateway.type;
 
     if (effectiveType === 'api') {
-      const [existingConfig] = await GatewayConfig.findOrCreate({
-        where: { gatewayId: gateway.id },
-        defaults: {
-          gatewayId: gateway.id,
-          apiMethod: 'POST',
-          successCodes: '200,201',
-        },
-        transaction: t,
-      });
+      let existingConfig = await GatewayConfig.findOne({ where: { gatewayId: gateway.id }, transaction: t });
+      if (!existingConfig) {
+        existingConfig = await GatewayConfig.create(
+          {
+            gatewayId: gateway.id,
+            apiMethod: 'POST',
+            successCodes: '200,201',
+          },
+          { transaction: t }
+        );
+      }
 
       if (config) {
         await existingConfig.update(

@@ -54,7 +54,7 @@ const sequelize = new Sequelize(env.db.name, env.db.user, env.db.pass, {
   },
   // Small pool: on Vercel each serverless invocation can spin up its own
   // instance of this module, so a generous per-instance pool multiplies into
-  // way more concurrent DB connections than TiDB's connection limit allows.
+  // too many concurrent database connections.
   pool: {
     max: env.isServerless ? 2 : 10,
     min: 0,

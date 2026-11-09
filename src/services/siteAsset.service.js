@@ -3,7 +3,7 @@ const ApiError = require('../utils/ApiError');
 
 // site_assets isn't part of the imported legacy schema, so create it the
 // first time it's touched instead of requiring a manual migration step on
-// every environment (local MySQL, TiDB on Vercel).
+// every environment (local or managed MySQL).
 let ensured = null;
 function ensureTable() {
   ensured = ensured || SiteAsset.sync();
