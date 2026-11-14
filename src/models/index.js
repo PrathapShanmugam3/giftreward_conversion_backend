@@ -14,6 +14,8 @@ const CampaignClick = require('./CampaignClick');
 const ReferUser = require('./ReferUser');
 const WalletTransaction = require('./WalletTransaction');
 const WithdrawalRequest = require('./WithdrawalRequest');
+const Payout = require('./Payout');
+const CampaignCashbackPayout = require('./CampaignCashbackPayout');
 const SiteConfig = require('./SiteConfig');
 const BlockedIp = require('./BlockedIp');
 const IpPageWhitelist = require('./IpPageWhitelist');
@@ -49,6 +51,8 @@ OfferEvent.hasMany(Conversion, { foreignKey: 'eventId', onDelete: 'CASCADE' });
 Conversion.belongsTo(OfferEvent, { foreignKey: 'eventId' });
 Offer.hasMany(Conversion, { foreignKey: 'offerId' });
 Conversion.belongsTo(Offer, { foreignKey: 'offerId' });
+Conversion.hasMany(CampaignCashbackPayout, { foreignKey: 'conversionId', onDelete: 'CASCADE' });
+CampaignCashbackPayout.belongsTo(Conversion, { foreignKey: 'conversionId' });
 
 // postbacks -> users, offers (CASCADE both)
 User.hasMany(Postback, { foreignKey: 'userId', onDelete: 'CASCADE' });
@@ -81,6 +85,12 @@ User.hasMany(WalletTransaction, { foreignKey: 'userId', onDelete: 'CASCADE' });
 WalletTransaction.belongsTo(User, { foreignKey: 'userId' });
 User.hasMany(WithdrawalRequest, { foreignKey: 'userId', onDelete: 'CASCADE' });
 WithdrawalRequest.belongsTo(User, { foreignKey: 'userId' });
+WithdrawalRequest.hasMany(Payout, { foreignKey: 'withdrawalId', onDelete: 'CASCADE' });
+Payout.belongsTo(WithdrawalRequest, { foreignKey: 'withdrawalId' });
+PaymentGateway.hasMany(CampaignCashbackPayout, { foreignKey: 'gatewayId' });
+CampaignCashbackPayout.belongsTo(PaymentGateway, { foreignKey: 'gatewayId' });
+PaymentGateway.hasMany(Payout, { foreignKey: 'gatewayId' });
+Payout.belongsTo(PaymentGateway, { foreignKey: 'gatewayId' });
 
 module.exports = {
   sequelize,
@@ -98,6 +108,8 @@ module.exports = {
   ReferUser,
   WalletTransaction,
   WithdrawalRequest,
+  Payout,
+  CampaignCashbackPayout,
   SiteConfig,
   BlockedIp,
   IpPageWhitelist,

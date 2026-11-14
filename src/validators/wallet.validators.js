@@ -2,7 +2,7 @@ const { body, param } = require('express-validator');
 
 const requestWithdrawalRules = [
   body('amount').isFloat({ gt: 0 }).withMessage('Amount must be greater than 0'),
-  body('method').isIn(['upi', 'bank', 'paypal']).withMessage('Invalid withdrawal method'),
+  body('method').equals('bank').withMessage('Only bank transfer payouts are available'),
   body('details').trim().notEmpty().withMessage('Withdrawal details are required'),
 ];
 

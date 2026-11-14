@@ -4,7 +4,12 @@ const { sanitize } = require('../utils/sanitize');
 const env = require('../config/env');
 
 const MOBILE_RE = /^[0-9]{10}$/;
-const UPI_RE = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/;
+const ACCOUNT_RE = /^[0-9]{6,20}$/;
+const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
+function accountNumberFromDetails(details = '') {
+  return String(details).match(/account number:\s*([0-9]{6,20})/i)?.[1] || '';
+}
 
 function totalUserCashback(eventConfig) {
   let total = 0;
@@ -15,7 +20,7 @@ function totalUserCashback(eventConfig) {
 }
 
 // Mirrors o/index.php GET: offer name, campaign steps, computed cashback,
-// and (if ?as=code given) the referrer's UPI + telegram link.
+// and (if ?as=code given) the referrer's Telegram link.
 async function getLandingPageData({ offerId, userId, campaignId, referCode }) {
   if (!offerId || !userId || !campaignId) {
     throw ApiError.badRequest('Invalid request parameters');
@@ -61,7 +66,6 @@ async function getLandingPageData({ offerId, userId, campaignId, referCode }) {
     const refer = await ReferUser.findOne({ where: { referCode: sanitize(referCode) } });
     if (refer) {
       referrer = {
-        upiId: refer.upiId,
         telegram: /^https?:\/\//.test(refer.telegram || '') ? refer.telegram : '',
       };
     } else {
@@ -79,10 +83,10 @@ async function getLandingPageData({ offerId, userId, campaignId, referCode }) {
   };
 }
 
-// Mirrors o/index.php POST: validates name/mobile/upi, inserts
+// Mirrors o/index.php POST: validates name/mobile/bank details, inserts
 // campaign_clicks, then hands back the /go redirect target. The actual
 // redirect to /go is performed by the controller.
-async function submitLandingForm({ offerId, userId, campaignId, referCode, name, mobile, upiId, ip }) {
+async function submitLandingForm({ offerId, userId, campaignId, referCode, name, mobile, accountNumber, ifsc, accountHolder, ip }) {
   if (!offerId || !userId || !campaignId) {
     throw ApiError.badRequest('Invalid request parameters');
   }
@@ -101,16 +105,18 @@ async function submitLandingForm({ offerId, userId, campaignId, referCode, name,
 
   const cleanName = sanitize(name || '');
   const cleanMobile = sanitize(mobile || '');
-  const cleanUpi = sanitize(upiId || '');
+  const cleanAccount = String(accountNumber || '').trim().replace(/\D/g, '');
+  const cleanIfsc = String(ifsc || '').trim().toUpperCase();
+  const cleanHolder = String(accountHolder || '').trim();
 
-  if (!cleanName || !cleanMobile || !cleanUpi) {
+  if (!cleanName || !cleanMobile || !cleanAccount || !cleanIfsc || !cleanHolder) {
     throw ApiError.badRequest('All fields are required');
   }
   if (!MOBILE_RE.test(cleanMobile)) {
     throw ApiError.badRequest('Invalid mobile number format');
   }
-  if (!UPI_RE.test(cleanUpi)) {
-    throw ApiError.badRequest('Invalid UPI ID format');
+  if (!ACCOUNT_RE.test(cleanAccount) || !IFSC_RE.test(cleanIfsc) || cleanHolder.length > 50) {
+    throw ApiError.badRequest('Enter a valid account number, IFSC and account holder name');
   }
 
   let eventConfig = {};
@@ -121,18 +127,20 @@ async function submitLandingForm({ offerId, userId, campaignId, referCode, name,
   }
   const amount = totalUserCashback(eventConfig);
 
-  let referrerUpi = '';
+  let referrerAccount = '';
   if (referCode) {
     const refer = await ReferUser.findOne({ where: { referCode: sanitize(referCode) } });
-    if (refer) referrerUpi = refer.upiId;
+    if (refer) referrerAccount = accountNumberFromDetails(refer.upiId);
   }
+
+  const bankDetails = `Account Number: ${cleanAccount} | IFSC: ${cleanIfsc} | Account Holder: ${cleanHolder}`;
 
   await CampaignClick.create({
     offername: offer.name,
     offerid: String(offerId),
     user: String(userId),
     amount,
-    upi: cleanUpi,
+    upi: bankDetails,
     date: new Date(),
     ip: ip || '',
     refercode: referCode ? sanitize(referCode) : '',
@@ -140,7 +148,7 @@ async function submitLandingForm({ offerId, userId, campaignId, referCode, name,
     number: cleanMobile,
   });
 
-  const redirectTo = `/go?cid=${offerId}&uid=${userId}&p1=${encodeURIComponent(cleanUpi)}&p2=${encodeURIComponent(referrerUpi)}&sub1=${encodeURIComponent(cleanMobile)}`;
+  const redirectTo = `/go?cid=${offerId}&uid=${userId}&p1=${encodeURIComponent(cleanAccount)}&p2=${encodeURIComponent(referrerAccount)}&sub1=${encodeURIComponent(cleanMobile)}`;
   return { redirectTo };
 }
 

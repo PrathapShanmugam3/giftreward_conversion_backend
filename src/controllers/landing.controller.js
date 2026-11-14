@@ -20,7 +20,9 @@ const submitLandingForm = asyncHandler(async (req, res) => {
     referCode,
     name: req.body.name,
     mobile: req.body.mobile,
-    upiId: req.body.upi_id,
+    accountNumber: req.body.account_number,
+    ifsc: req.body.ifsc,
+    accountHolder: req.body.account_holder,
     ip: req.ip,
   });
   res.json({ success: true, ...result });

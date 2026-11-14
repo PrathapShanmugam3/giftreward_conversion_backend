@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { sequelize, Click, User, Offer, UserOffer, OfferEvent, Conversion, Admin, Postback, PostbackLog, IpPageWhitelist, WalletTransaction } = require('../models');
+const { sequelize, Click, User, Offer, UserOffer, OfferEvent, Conversion, Admin, Postback, PostbackLog, IpPageWhitelist } = require('../models');
 const ApiError = require('../utils/ApiError');
 const { canAccessOffer } = require('./offer.service');
 const { getIpLocation } = require('./geo.service');
@@ -208,30 +208,14 @@ async function processPostback({ clickId, event, key, offerId: offerIdParam, adv
       offerId: click.offerId,
       eventId: eventData.id,
       clickId,
-      status: 'approved',
+      // Hold conversion earnings until an administrator reviews the lead.
+      status: 'pending',
       payout: eventData.payoutAmount,
     });
   } catch (err) {
     await restoreCapIfNeeded();
     await sendRejectedMessage(click, event, `Database Error: ${err.message}`, { advertiserIp });
     reject(500, `ERROR: Inserting conversion failed - ${err.message}`);
-  }
-
-  try {
-    await User.increment('walletBalance', { by: Number(eventData.payoutAmount), where: { id: click.userId } });
-    // [FIX] (quirks.md): legacy credited the wallet here without writing a
-    // wallet_transactions row, leaving no ledger trail for this credit.
-    await WalletTransaction.create({
-      userId: click.userId,
-      amount: eventData.payoutAmount,
-      type: 'credit',
-      reason: `Conversion #${conversion.id} payout (${event})`,
-    });
-  } catch (err) {
-    await conversion.destroy();
-    await restoreCapIfNeeded();
-    await sendRejectedMessage(click, event, 'Wallet Update Failed', { advertiserIp });
-    reject(500, 'ERROR: Wallet update failed');
   }
 
   const telegramSent = await sendSuccessMessage(click, eventData, event, conversion.id, totalLeads, todayLeads, advertiserIp);

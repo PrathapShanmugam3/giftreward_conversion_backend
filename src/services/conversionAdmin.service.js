@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { sequelize, Conversion, User, Offer, OfferEvent } = require('../models');
 const ApiError = require('../utils/ApiError');
 const walletService = require('./wallet.service');
+const campaignCashbackPayoutService = require('./campaignCashbackPayout.service');
 
 async function listConversionsAdmin({ status, offerId, userId, fromDate, toDate }) {
   const where = {};
@@ -63,6 +64,9 @@ async function updateConversionStatus(conversionId, newStatus, adminId) {
 
     conversion.status = newStatus;
     await conversion.save({ transaction: t });
+    if (newStatus === 'approved') {
+      await campaignCashbackPayoutService.queueApprovedConversion(conversion, t);
+    }
     return conversion;
   });
 }

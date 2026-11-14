@@ -2,7 +2,8 @@ const { Offer, Campaign, ReferUser } = require('../models');
 const ApiError = require('../utils/ApiError');
 const { sanitize } = require('../utils/sanitize');
 
-const UPI_RE = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/i;
+const ACCOUNT_RE = /^[0-9]{6,20}$/;
+const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 const CODE_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 function generateReferralCode() {
@@ -67,14 +68,18 @@ async function getReferralPageData({ offerId, campaignId }) {
   };
 }
 
-// Mirrors refer/index.php POST: if (campaign_id, upi_id) already has a
+// Mirrors refer/index.php POST: if (campaign_id, bank details) already has a
 // referral code, return it; otherwise generate and insert a new one.
-async function submitReferral({ offerId, userId, campaignId, upiId, telegramChannel, ip }) {
-  const cleanUpi = sanitize(upiId || '');
-  if (!cleanUpi) throw ApiError.badRequest('Please enter your UPI ID');
-  if (!UPI_RE.test(cleanUpi)) throw ApiError.badRequest('Please enter a valid UPI ID (e.g. 1234567890@upi)');
+async function submitReferral({ offerId, userId, campaignId, accountNumber, ifsc, accountHolder, telegramChannel, ip }) {
+  const account = String(accountNumber || '').trim().replace(/\D/g, '');
+  const bankIfsc = String(ifsc || '').trim().toUpperCase();
+  const holder = String(accountHolder || '').trim();
+  if (!ACCOUNT_RE.test(account) || !IFSC_RE.test(bankIfsc) || !holder || holder.length > 50) {
+    throw ApiError.badRequest('Enter a valid account number, IFSC and account holder name');
+  }
+  const bankDetails = `Account Number: ${account} | IFSC: ${bankIfsc} | Account Holder: ${holder}`;
 
-  const existing = await ReferUser.findOne({ where: { campaignId: String(campaignId), upiId: cleanUpi } });
+  const existing = await ReferUser.findOne({ where: { campaignId: String(campaignId), upiId: bankDetails } });
   if (existing) {
     return {
       referralCode: existing.referCode,
@@ -88,7 +93,7 @@ async function submitReferral({ offerId, userId, campaignId, upiId, telegramChan
     campaignId: String(campaignId),
     offerId: String(offerId),
     userId: String(userId),
-    upiId: cleanUpi,
+    upiId: bankDetails,
     telegram: sanitize(telegramChannel || ''),
     referCode: referralCode,
     ipAddress: ip || '',

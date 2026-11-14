@@ -11,4 +11,14 @@ const updateStatus = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Withdrawal request updated successfully!', withdrawal });
 });
 
-module.exports = { listWithdrawals, updateStatus };
+const refreshGatewayStatus = asyncHandler(async (req, res) => {
+  const result = await walletService.refreshWithdrawalGatewayStatus(req.params.id);
+  res.json({ success: true, ...result });
+});
+
+const markPaidManually = asyncHandler(async (req, res) => {
+  const withdrawal = await walletService.markWithdrawalPaidManually(req.params.id);
+  res.json({ success: true, message: 'Withdrawal marked paid manually', withdrawal });
+});
+
+module.exports = { listWithdrawals, updateStatus, refreshGatewayStatus, markPaidManually };

@@ -15,7 +15,9 @@ const submitReferral = asyncHandler(async (req, res) => {
     offerId,
     userId,
     campaignId,
-    upiId: req.body.upi_id,
+    accountNumber: req.body.account_number,
+    ifsc: req.body.ifsc,
+    accountHolder: req.body.account_holder,
     telegramChannel: req.body.telegram_channel,
     ip: req.ip,
   });

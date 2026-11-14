@@ -1,8 +1,9 @@
 const axios = require('axios');
-const { sequelize, User, WalletTransaction, WithdrawalRequest, SiteConfig, PaymentGateway, GatewayConfig, GatewayParameter } = require('../models');
+const { Op } = require('sequelize');
+const { sequelize, User, WalletTransaction, WithdrawalRequest, Payout, SiteConfig, PaymentGateway, GatewayConfig, GatewayParameter } = require('../models');
 const ApiError = require('../utils/ApiError');
 
-const VALID_METHODS = ['upi', 'bank', 'paypal'];
+const VALID_METHODS = ['bank'];
 
 // Credits or debits a user's wallet_balance and writes a matching
 // wallet_transactions row in the same DB transaction, so the ledger always
@@ -106,10 +107,18 @@ async function getInvoice(userId, withdrawalId) {
 // ---------------------------------------------------------------------------
 async function listWithdrawalsAdmin({ status } = {}) {
   const where = {};
-  if (status && status !== 'all') where.status = status;
+  if (status === 'pending') where.status = { [Op.in]: ['pending', 'approved'] };
+  else if (status && status !== 'all') where.status = status;
   return WithdrawalRequest.findAll({
     where,
-    include: [{ model: User, attributes: ['id', 'name', 'email'] }],
+    include: [
+      { model: User, attributes: ['id', 'name', 'email'] },
+      {
+        model: Payout,
+        attributes: ['id', 'rupiyaxTrxId', 'refId', 'amount', 'fee', 'status', 'utr', 'createdAt'],
+        include: [{ model: PaymentGateway, attributes: ['id', 'name'] }],
+      },
+    ],
     order: [['createdAt', 'DESC']],
   });
 }
@@ -235,6 +244,85 @@ async function sendRupiyaXPayout(withdrawal, apiKey, userName) {
   return result;
 }
 
+function gatewayReference(response, keyA, keyB) {
+  return response?.data?.[keyA] || response?.data?.[keyB] || null;
+}
+
+async function refreshWithdrawalGatewayStatus(withdrawalId) {
+  const payout = await Payout.findOne({
+    where: { withdrawalId },
+    include: [{ model: PaymentGateway, include: [{ model: GatewayConfig }] }],
+    order: [['createdAt', 'DESC']],
+  });
+  if (!payout || (!payout.rupiyaxTrxId && !payout.refId)) {
+    throw ApiError.notFound('No RupiyaX payout found for this withdrawal yet');
+  }
+  if (payout.PaymentGateway?.name?.trim().toLowerCase() !== 'rupiyax') {
+    throw ApiError.badRequest('Live settlement refresh is available for RupiyaX payouts only');
+  }
+
+  let gateway;
+  try {
+    const query = payout.rupiyaxTrxId
+      ? `trx_id=${encodeURIComponent(payout.rupiyaxTrxId)}`
+      : `ref_id=${encodeURIComponent(payout.refId)}`;
+    const { data } = await axios.get(`https://api.rupiyax.com/api/v1/payouts/status?${query}`, {
+      headers: { 'x-api-key': String(payout.PaymentGateway?.GatewayConfig?.apiKey || '').trim() },
+      timeout: 20000,
+    });
+    gateway = data;
+  } catch (err) {
+    throw new ApiError(502, `Could not refresh RupiyaX status: ${err.response?.data?.message || err.message}`);
+  }
+
+  const gatewayStatus = String(gateway?.data?.status || '').toLowerCase();
+  const updatedWithdrawal = await sequelize.transaction(async (t) => {
+    const withdrawal = await WithdrawalRequest.findByPk(withdrawalId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!withdrawal) throw ApiError.notFound('Withdrawal request not found');
+    payout.status = gatewayStatus || payout.status;
+    payout.utr = gateway?.data?.utr || payout.utr;
+    payout.rawResponse = gateway || {};
+    await payout.save({ transaction: t });
+    withdrawal.gatewayStatus = gatewayStatus || withdrawal.gatewayStatus;
+    if (gatewayStatus === 'success' && withdrawal.status !== 'rejected') {
+      withdrawal.status = 'paid';
+      withdrawal.paidAt = new Date();
+    } else if (gatewayStatus === 'failed' && !['rejected', 'paid'].includes(withdrawal.status)) {
+      withdrawal.status = 'failed';
+      if (!withdrawal.refundedAt) {
+        await User.increment('walletBalance', { by: Number(withdrawal.amount), where: { id: withdrawal.userId }, transaction: t });
+        await WalletTransaction.create({ userId: withdrawal.userId, amount: withdrawal.amount, type: 'credit', reason: `Withdrawal #${withdrawal.id} payout failed (refund)` }, { transaction: t });
+        withdrawal.refundedAt = new Date();
+      }
+    }
+    await withdrawal.save({ transaction: t });
+    return withdrawal;
+  });
+  return { gateway, withdrawal: updatedWithdrawal };
+}
+
+async function markWithdrawalPaidManually(withdrawalId) {
+  return sequelize.transaction(async (t) => {
+    const withdrawal = await WithdrawalRequest.findByPk(withdrawalId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!withdrawal || withdrawal.status !== 'approved') {
+      throw ApiError.badRequest('Withdrawal not found or not in approved state');
+    }
+    const payout = await Payout.findOne({
+      where: { withdrawalId },
+      include: [{ model: PaymentGateway, attributes: ['name'] }],
+      transaction: t,
+    });
+    if (payout?.PaymentGateway?.name?.trim().toLowerCase() === 'rupiyax') {
+      throw ApiError.badRequest('A RupiyaX payout is recorded; refresh its live status instead');
+    }
+    withdrawal.status = 'paid';
+    withdrawal.gatewayStatus = 'manual';
+    withdrawal.paidAt = new Date();
+    await withdrawal.save({ transaction: t });
+    return withdrawal;
+  });
+}
+
 async function updateWithdrawalStatus(withdrawalId, { status, notes, gatewayId }) {
   if (!['pending', 'approved', 'rejected'].includes(status)) {
     throw ApiError.badRequest('Invalid status value');
@@ -263,10 +351,33 @@ async function updateWithdrawalStatus(withdrawalId, { status, notes, gatewayId }
       );
     }
 
-    withdrawal.status = status;
+    const manualPaid = status === 'approved' && !gatewayId;
+    withdrawal.status = manualPaid ? 'paid' : status;
     const providerReference = gatewayResponse?.transferId || gatewayResponse?.referenceId || gatewayResponse?.id
       || gatewayResponse?.data?.trxId || gatewayResponse?.data?.trx_id || gatewayResponse?.data?.refId || gatewayResponse?.data?.ref_id;
     withdrawal.notes = [notes, providerReference ? `Gateway reference: ${providerReference}` : null].filter(Boolean).join('\n') || null;
+    if (manualPaid) {
+      withdrawal.gatewayStatus = 'manual';
+      withdrawal.paidAt = new Date();
+    } else if (gatewayResponse) {
+      const gatewayStatus = String(gatewayResponse?.data?.status || (gatewayResponse?.success ? 'pending' : 'failed')).toLowerCase();
+      withdrawal.gatewayStatus = gatewayStatus;
+      await Payout.create({
+        withdrawalId: withdrawal.id,
+        gatewayId: gatewayId || null,
+        rupiyaxTrxId: gatewayReference(gatewayResponse, 'trxId', 'trx_id'),
+        refId: gatewayReference(gatewayResponse, 'refId', 'ref_id') || `WD${withdrawal.id}`,
+        amount: withdrawal.amount,
+        fee: gatewayResponse?.data?.fee || null,
+        status: gatewayStatus,
+        utr: gatewayResponse?.data?.utr || null,
+        rawResponse: gatewayResponse,
+      }, { transaction: t });
+      if (gatewayStatus === 'success') {
+        withdrawal.status = 'paid';
+        withdrawal.paidAt = new Date();
+      }
+    }
     withdrawal.processedAt = new Date();
     await withdrawal.save({ transaction: t });
 
@@ -281,4 +392,6 @@ module.exports = {
   getInvoice,
   listWithdrawalsAdmin,
   updateWithdrawalStatus,
+  refreshWithdrawalGatewayStatus,
+  markWithdrawalPaidManually,
 };
