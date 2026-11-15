@@ -5,6 +5,7 @@ const {
   PaymentGateway, GatewayConfig,
 } = require('../models');
 const ApiError = require('../utils/ApiError');
+const logger = require('../utils/logger');
 
 function bankFields(details = '') {
   const text = String(details);
@@ -96,6 +97,22 @@ async function rupiyaXGateway(gatewayId) {
 
 async function requestRupiyaXPayout(row, gateway) {
   const refId = row.refId || `CBP${row.id}`;
+  // Run from the Vercel function to identify its current outbound IP for the
+  // provider allowlist. Vercel's default egress IP can change between calls.
+  try {
+    const { data } = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+    logger.info('Outbound IP before RupiyaX cashback payout', {
+      payoutId: row.id,
+      ip: data?.ip || 'unavailable',
+    });
+  } catch (err) {
+    // IP lookup is diagnostic only; don't block the payout if ipify is down.
+    logger.warn('Could not determine outbound IP before RupiyaX cashback payout', {
+      payoutId: row.id,
+      message: err.message,
+    });
+  }
+
   try {
     const { data } = await axios.post('https://api.rupiyax.com/api/v1/payouts/request', {
       amount: Number(row.amount),
