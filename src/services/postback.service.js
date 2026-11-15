@@ -4,6 +4,7 @@ const ApiError = require('../utils/ApiError');
 const { canAccessOffer } = require('./offer.service');
 const { getIpLocation } = require('./geo.service');
 const { sendTelegramMessage } = require('./telegram.service');
+const campaignCashbackPayoutService = require('./campaignCashbackPayout.service');
 const logger = require('../utils/logger');
 
 const CLICK_ID_RE = /^[a-zA-Z0-9_-]+$/;
@@ -216,6 +217,21 @@ async function processPostback({ clickId, event, key, offerId: offerIdParam, adv
     await restoreCapIfNeeded();
     await sendRejectedMessage(click, event, `Database Error: ${err.message}`, { advertiserIp });
     reject(500, `ERROR: Inserting conversion failed - ${err.message}`);
+  }
+
+  // Queue configured campaign cashback as soon as the advertiser reports the
+  // conversion. The conversion can remain pending for admin review; campaign
+  // cashback payout requests are independent and start in pending status.
+  try {
+    await campaignCashbackPayoutService.queueConversionCashbacks(conversion);
+  } catch (err) {
+    // The conversion is already stored, so don't fail the advertiser callback
+    // and cause retries to be rejected as duplicates. Keep the failure visible
+    // so a missed cashback request can be repaired from logs.
+    logger.error('Could not queue campaign cashback for conversion', {
+      conversionId: conversion.id,
+      message: err.message,
+    });
   }
 
   const telegramSent = await sendSuccessMessage(click, eventData, event, conversion.id, totalLeads, todayLeads, advertiserIp);

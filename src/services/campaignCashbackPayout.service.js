@@ -26,7 +26,7 @@ function amountFor(config, eventName, field) {
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
-async function queueApprovedConversion(conversion, transaction) {
+async function queueConversionCashbacks(conversion, transaction) {
   const [click, event, campaign] = await Promise.all([
     Click.findOne({ where: { clickId: conversion.clickId }, transaction }),
     OfferEvent.findByPk(conversion.eventId, { transaction }),
@@ -181,4 +181,4 @@ async function refreshPayoutStatus(payoutId) {
   return { payout, gateway: response };
 }
 
-module.exports = { queueApprovedConversion, listPayouts, payPayout, refreshPayoutStatus };
+module.exports = { queueConversionCashbacks, listPayouts, payPayout, refreshPayoutStatus };

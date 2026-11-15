@@ -65,7 +65,7 @@ async function updateConversionStatus(conversionId, newStatus, adminId) {
     conversion.status = newStatus;
     await conversion.save({ transaction: t });
     if (newStatus === 'approved') {
-      await campaignCashbackPayoutService.queueApprovedConversion(conversion, t);
+      await campaignCashbackPayoutService.queueConversionCashbacks(conversion, t);
     }
     return conversion;
   });
