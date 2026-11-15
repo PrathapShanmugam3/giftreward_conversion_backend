@@ -21,7 +21,12 @@ CampaignCashbackPayout.init(
     paidAt: { type: DataTypes.DATE, field: 'paid_at' },
     rawResponse: { type: DataTypes.JSON, field: 'raw_response' },
   },
-  { sequelize, modelName: 'CampaignCashbackPayout', tableName: 'campaign_cashback_payouts' }
+  {
+    sequelize,
+    modelName: 'CampaignCashbackPayout',
+    tableName: 'campaign_cashback_payouts',
+    underscored: true,
+  }
 );
 
 module.exports = CampaignCashbackPayout;
