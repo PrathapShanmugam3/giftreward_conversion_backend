@@ -99,8 +99,9 @@ async function createOffer(payload) {
       { transaction: t }
     );
 
+    let offerEvents = [];
     if (Array.isArray(events) && events.length > 0) {
-      await OfferEvent.bulkCreate(
+      offerEvents = await OfferEvent.bulkCreate(
         events.map((e) => ({
           offerId: offer.id,
           eventName: e.eventName,
@@ -111,7 +112,8 @@ async function createOffer(payload) {
       );
     }
 
-    return getOfferAdmin(offer.id, { transaction: t });
+    offer.setDataValue('OfferEvents', offerEvents);
+    return offer;
   });
 }
 
