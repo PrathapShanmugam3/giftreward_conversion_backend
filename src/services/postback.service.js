@@ -48,7 +48,7 @@ async function sendRejectedMessage(click, event, reason, { totalLeads = 0, today
   return sendTelegramMessage(msg);
 }
 
-async function sendSuccessMessage(click, eventData, event, conversionId, totalLeads, todayLeads, advertiserIp) {
+async function sendSuccessMessage(click, eventData, payout, event, conversionId, totalLeads, todayLeads, advertiserIp) {
   const clickTime = click.createdAt;
   const now = new Date();
   const location = await getIpLocation(click.ip);
@@ -69,7 +69,7 @@ async function sendSuccessMessage(click, eventData, event, conversionId, totalLe
   msg += `⏰ <b>Click Time:</b> ${new Date(clickTime).toLocaleString()}\n`;
   msg += `⏰ <b>Track Time:</b> ${now.toLocaleString()}\n`;
   msg += `⏰️ <b>Time Gap:</b> ${formatTimeDifference(clickTime, now)}\n\n`;
-  msg += `💰 <b>Payout:</b> $${eventData.payoutAmount}\n🆔 <b>Conversion ID:</b> ${conversionId}\n\n`;
+  msg += `💰 <b>Payout:</b> $${payout}\n🆔 <b>Conversion ID:</b> ${conversionId}\n\n`;
   msg += `⚡️ <b>Powered By:</b> GiftReward\n\n`;
   return sendTelegramMessage(msg);
 }
@@ -204,14 +204,21 @@ async function processPostback({ clickId, event, key, offerId: offerIdParam, adv
 
   let conversion;
   try {
-    conversion = await Conversion.create({
-      userId: click.userId,
-      offerId: click.offerId,
-      eventId: eventData.id,
-      clickId,
-      // Hold conversion earnings until an administrator reviews the lead.
-      status: 'pending',
-      payout: eventData.payoutAmount,
+    await sequelize.transaction(async (transaction) => {
+      conversion = await Conversion.create({
+        userId: click.userId,
+        offerId: click.offerId,
+        eventId: eventData.id,
+        clickId,
+        // Hold conversion earnings until an administrator reviews the lead.
+        status: 'pending',
+        payout: eventData.payoutAmount,
+      }, { transaction });
+
+      const campaignPayouts = await campaignCashbackPayoutService.queueConversionCashbacks(conversion, transaction);
+      const cashbackTotal = campaignPayouts.reduce((sum, payout) => sum + Number(payout.amount), 0);
+      conversion.payout = Math.max(0, Number(eventData.payoutAmount) - cashbackTotal).toFixed(2);
+      await conversion.save({ transaction });
     });
   } catch (err) {
     await restoreCapIfNeeded();
@@ -219,22 +226,7 @@ async function processPostback({ clickId, event, key, offerId: offerIdParam, adv
     reject(500, `ERROR: Inserting conversion failed - ${err.message}`);
   }
 
-  // Queue configured campaign cashback as soon as the advertiser reports the
-  // conversion. The conversion can remain pending for admin review; campaign
-  // cashback payout requests are independent and start in pending status.
-  try {
-    await campaignCashbackPayoutService.queueConversionCashbacks(conversion);
-  } catch (err) {
-    // The conversion is already stored, so don't fail the advertiser callback
-    // and cause retries to be rejected as duplicates. Keep the failure visible
-    // so a missed cashback request can be repaired from logs.
-    logger.error('Could not queue campaign cashback for conversion', {
-      conversionId: conversion.id,
-      message: err.message,
-    });
-  }
-
-  const telegramSent = await sendSuccessMessage(click, eventData, event, conversion.id, totalLeads, todayLeads, advertiserIp);
+  const telegramSent = await sendSuccessMessage(click, eventData, conversion.payout, event, conversion.id, totalLeads, todayLeads, advertiserIp);
 
   await PostbackLog.create({ conversionId: conversion.id, sentToAdmin: 1 });
 
@@ -250,7 +242,7 @@ async function processPostback({ clickId, event, key, offerId: offerIdParam, adv
       '{offerid}': click.offerId,
       '{click_id}': clickId,
       '{event}': event,
-      '{payout}': eventData.payoutAmount,
+      '{payout}': conversion.payout,
       '{ip}': click.ip || '',
       '{user_agent}': click.userAgent || '',
       '{offer_name}': click.offerName || '',
@@ -294,7 +286,7 @@ async function processPostback({ clickId, event, key, offerId: offerIdParam, adv
 
   return {
     conversionId: conversion.id,
-    payout: eventData.payoutAmount,
+    payout: conversion.payout,
     postbackTriggered,
     lines,
   };

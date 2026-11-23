@@ -81,7 +81,11 @@ async function listPayouts({ status } = {}) {
   if (status && status !== 'all') {
     where.status = status === 'pending' ? { [Op.in]: ['pending', 'processing'] } : status;
   }
-  return CampaignCashbackPayout.findAll({ where, order: [['createdAt', 'DESC']] });
+  return CampaignCashbackPayout.findAll({
+    where,
+    include: [{ model: Conversion, attributes: ['id', 'status'] }],
+    order: [['createdAt', 'DESC']],
+  });
 }
 
 async function rupiyaXGateway(gatewayId) {
@@ -137,6 +141,10 @@ async function payPayout(payoutId, gatewayId) {
   const payout = await CampaignCashbackPayout.findByPk(payoutId);
   if (!payout) throw ApiError.notFound('Cashback payout not found');
   if (!['pending', 'failed'].includes(payout.status)) throw ApiError.conflict(`Payout is already ${payout.status}`);
+  const conversion = await Conversion.findByPk(payout.conversionId);
+  if (!conversion || conversion.status !== 'approved') {
+    throw ApiError.conflict('The conversion must be approved before its cashback can be paid');
+  }
   const gateway = await rupiyaXGateway(gatewayId);
   const response = await requestRupiyaXPayout(payout, gateway);
   if (!response?.success) throw new ApiError(502, `RupiyaX rejected the payout: ${response?.message || 'unknown provider error'}`);
@@ -152,6 +160,41 @@ async function payPayout(payoutId, gatewayId) {
   payout.rawResponse = response;
   await payout.save();
   return payout;
+}
+
+async function markPayoutPaidManually(payoutId, adminId) {
+  return sequelize.transaction(async (transaction) => {
+    const payoutSnapshot = await CampaignCashbackPayout.findByPk(payoutId, { transaction });
+    if (!payoutSnapshot) throw ApiError.notFound('Cashback payout not found');
+
+    const conversion = await Conversion.findByPk(payoutSnapshot.conversionId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (!conversion || conversion.status !== 'approved') {
+      throw ApiError.conflict('The conversion must be approved before its cashback can be marked paid');
+    }
+
+    const payout = await CampaignCashbackPayout.findByPk(payoutId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (!['pending', 'failed'].includes(payout.status)) {
+      throw ApiError.conflict(`Payout is already ${payout.status}`);
+    }
+
+    const paidAt = new Date();
+    payout.status = 'paid';
+    payout.gatewayStatus = 'manual_success';
+    payout.paidAt = paidAt;
+    payout.rawResponse = {
+      manual: true,
+      markedByAdminId: Number(adminId),
+      markedAt: paidAt.toISOString(),
+    };
+    await payout.save({ transaction });
+    return payout;
+  });
 }
 
 async function refreshPayoutStatus(payoutId) {
@@ -181,4 +224,10 @@ async function refreshPayoutStatus(payoutId) {
   return { payout, gateway: response };
 }
 
-module.exports = { queueConversionCashbacks, listPayouts, payPayout, refreshPayoutStatus };
+module.exports = {
+  queueConversionCashbacks,
+  listPayouts,
+  payPayout,
+  markPayoutPaidManually,
+  refreshPayoutStatus,
+};

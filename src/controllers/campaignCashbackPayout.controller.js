@@ -11,9 +11,14 @@ const pay = asyncHandler(async (req, res) => {
   res.json({ success: true, payout });
 });
 
+const markPaidManually = asyncHandler(async (req, res) => {
+  const payout = await payoutService.markPayoutPaidManually(req.params.id, req.auth.sub);
+  res.json({ success: true, payout });
+});
+
 const refresh = asyncHandler(async (req, res) => {
   const result = await payoutService.refreshPayoutStatus(req.params.id);
   res.json({ success: true, ...result });
 });
 
-module.exports = { list, pay, refresh };
+module.exports = { list, pay, markPaidManually, refresh };
