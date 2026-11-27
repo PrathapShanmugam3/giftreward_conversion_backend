@@ -27,12 +27,23 @@ function amountFor(config, eventName, field) {
 }
 
 async function queueConversionCashbacks(conversion, transaction) {
-  const [click, event, campaign] = await Promise.all([
+  const [click, event] = await Promise.all([
     Click.findOne({ where: { clickId: conversion.clickId }, transaction }),
     OfferEvent.findByPk(conversion.eventId, { transaction }),
-    Campaign.findOne({ where: { offerId: conversion.offerId, userId: conversion.userId }, transaction, order: [['createdAt', 'DESC']] }),
   ]);
-  if (!click || !event || !campaign) return [];
+  if (!click || !event) return [];
+
+  const campaign = click.sub2
+    ? await Campaign.findOne({
+      where: { campaignId: click.sub2, offerId: conversion.offerId, userId: conversion.userId },
+      transaction,
+    })
+    : await Campaign.findOne({
+      where: { offerId: conversion.offerId, userId: conversion.userId },
+      transaction,
+      order: [['createdAt', 'DESC']],
+    });
+  if (!campaign) return [];
 
   const campaignClick = await CampaignClick.findOne({
     where: { offerid: String(conversion.offerId), user: String(conversion.userId), number: click.sub1 || '' },
@@ -45,6 +56,18 @@ async function queueConversionCashbacks(conversion, transaction) {
   const userBank = bankFields(campaignClick.upi);
   const created = [];
   const userAmount = amountFor(config, event.eventName, 'user_cashback');
+  const refAmount = amountFor(config, event.eventName, 'referral_cashback');
+  if (userAmount + refAmount > Number(event.payoutAmount)) {
+    logger.error('Campaign cashback allocation exceeds the current offer payout', {
+      campaignId: campaign.campaignId,
+      conversionId: conversion.id,
+      offerPayout: Number(event.payoutAmount),
+      userCashback: userAmount,
+      referralCashback: refAmount,
+    });
+    return [];
+  }
+
   if (userAmount && userBank.accountNumber && userBank.ifsc && click.p1 === userBank.accountNumber) {
     const [row] = await CampaignCashbackPayout.findOrCreate({
       where: { conversionId: conversion.id, recipientType: 'user' },
@@ -61,7 +84,6 @@ async function queueConversionCashbacks(conversion, transaction) {
     ? await ReferUser.findOne({ where: { campaignId: campaign.campaignId, referCode: campaignClick.refercode }, transaction })
     : null;
   const refBank = bankFields(refer?.upiId);
-  const refAmount = amountFor(config, event.eventName, 'referral_cashback');
   if (refer && refAmount && click.p2 === refBank.accountNumber && refBank.accountNumber && refBank.ifsc) {
     const [row] = await CampaignCashbackPayout.findOrCreate({
       where: { conversionId: conversion.id, recipientType: 'referrer' },

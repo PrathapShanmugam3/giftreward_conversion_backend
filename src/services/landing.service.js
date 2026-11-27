@@ -148,7 +148,7 @@ async function submitLandingForm({ offerId, userId, campaignId, referCode, name,
     number: cleanMobile,
   });
 
-  const redirectTo = `/go?cid=${offerId}&uid=${userId}&p1=${encodeURIComponent(cleanAccount)}&p2=${encodeURIComponent(referrerAccount)}&sub1=${encodeURIComponent(cleanMobile)}`;
+  const redirectTo = `/go?cid=${offerId}&uid=${userId}&p1=${encodeURIComponent(cleanAccount)}&p2=${encodeURIComponent(referrerAccount)}&sub1=${encodeURIComponent(cleanMobile)}&sub2=${encodeURIComponent(campaignId)}`;
   return { redirectTo };
 }
 

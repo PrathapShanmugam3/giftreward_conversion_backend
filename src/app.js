@@ -43,11 +43,9 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(env.isProd ? 'combined' : 'dev'));
 
-// --- Public tracking routes (clean paths, no .php/.html extensions) ---
-// These replace the legacy PHP file-based URLs (go/index.php, postback.php,
-// api.php). Advertiser/publisher integrations pointed at the old *.php
-// links need to be reissued against these new paths when this backend goes
-// live — see .claude/skills/gskloots-php-reference for the original shapes.
+// --- Public tracking routes ---
+// /go and /report use clean paths. /postback.php remains aliased below for
+// advertisers that still call the legacy PHP endpoint.
 app.use(
   '/go',
   helmet({ contentSecurityPolicy: false }), // the redirect page's inline <script> needs this relaxed, scoped to just /go
@@ -62,6 +60,7 @@ app.use(
 // just ones this router matches (confirmed with a standalone test).
 app.use(postbackShortRoutes); // short form: /postback/:tid/:event/:key
 app.use('/postback', postbackLimiter, postbackRoutes); // long form: /postback?click_id=&event=&key=
+app.use('/postback.php', postbackLimiter, postbackRoutes); // legacy advertiser URL: /postback.php?click_id=&event=&key=
 app.use('/report', trackingLimiter, reportingApiRoutes); // was api.php
 // /o, /refer and /tracking are also React page routes served by the
 // frontend (the pages at those paths call back into this API). To avoid the

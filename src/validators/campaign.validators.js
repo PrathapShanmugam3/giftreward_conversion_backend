@@ -5,6 +5,7 @@ const createCampaignRules = [
   body('events').isArray({ min: 1 }).withMessage('At least one event is required'),
   body('events.*.name').trim().notEmpty().withMessage('Event name is required'),
   body('events.*.cashback').isFloat({ min: 0 }).withMessage('Cashback must be a positive number'),
+  body('events.*.referralCashback').optional().isFloat({ min: 0 }).withMessage('Referral cashback must be a non-negative number'),
   body('events.*.maxPayout').isFloat({ min: 0 }).withMessage('maxPayout must be a positive number'),
   body('steps').optional().isArray(),
   body('referralEnabled').optional().isBoolean(),
